@@ -7,6 +7,8 @@ and deterministic AI-cliché scrubbing guardrails.
 import re
 from typing import Any
 
+from google.adk.tools import ToolContext
+
 from app.models import (
     InstagramMemeFormatItem,
     InstagramMemeResponse,
@@ -496,3 +498,93 @@ def scrub_ai_cliches(caption_text: str) -> dict[str, Any]:
             critique=f"Error executing scrub_ai_cliches: {e!s}",
             recovery_guidance="Proceed with caution, ensuring output does not include corporate AI phrases like 'delve into' or 'unleash'.",
         ).model_dump()
+
+
+async def search_user_vibe_history(
+    query: str,
+    tool_context: ToolContext,
+) -> dict[str, Any]:
+    """Asynchronously searches the user's persistent memory bank and vibe history for past styles or humor angles.
+
+    Args:
+        query: The semantic search query or theme (e.g. 'preferred tone', 'past captions', 'corporate jokes').
+
+    Returns:
+        A dictionary containing matched past memory records, preferred vibes, and status.
+    """
+    try:
+        memories: list[str] = []
+        if hasattr(tool_context, "search_memory"):
+            try:
+                mem_results = await tool_context.search_memory(query)
+                if mem_results:
+                    memories.extend([str(m) for m in mem_results])
+            except Exception:
+                pass
+
+        user_vibe = tool_context.state.get(
+            "user:vibe_profile", "default authentic creator"
+        )
+        past_captions = tool_context.state.get("user:saved_captions", [])
+
+        matched = [
+            c
+            for c in past_captions
+            if any(w in c.lower() for w in query.lower().split())
+        ]
+        if not matched and past_captions:
+            matched = past_captions[-3:]
+
+        return {
+            "status": "success",
+            "query": query,
+            "user_vibe_profile": user_vibe,
+            "recalled_memories": memories or matched,
+            "count": len(memories or matched),
+            "recovery_guidance": None,
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "query": query,
+            "user_vibe_profile": "casual authentic",
+            "recalled_memories": [],
+            "recovery_guidance": f"Memory search error: {e!s}. Proceeding with default user profile.",
+        }
+
+
+async def save_vibe_memory(
+    vibe: str,
+    style_notes: str,
+    tool_context: ToolContext,
+) -> dict[str, Any]:
+    """Asynchronously persists the user's comedic style preferences and viral formulas into long-term user memory.
+
+    Args:
+        vibe: The primary comedic vibe or aesthetic preference (e.g. 'unhinged corporate dread', 'minimalist aesthetic irony').
+        style_notes: Specific guidelines or rules learned from this conversation.
+
+    Returns:
+        A dictionary confirming memory persistence status and updated profile.
+    """
+    try:
+        updated_profile = f"{vibe} | {style_notes}".strip(" |")
+        tool_context.state["user:vibe_profile"] = updated_profile
+
+        saved_captions = tool_context.state.get("user:saved_captions", [])
+        if style_notes and style_notes not in saved_captions:
+            saved_captions.append(style_notes)
+            tool_context.state["user:saved_captions"] = saved_captions[-10:]
+
+        return {
+            "status": "success",
+            "vibe_saved": vibe,
+            "updated_profile": updated_profile,
+            "recovery_guidance": None,
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "vibe_saved": vibe,
+            "recovery_guidance": f"Error persisting memory: {e!s}. State will remain in session scope.",
+        }
