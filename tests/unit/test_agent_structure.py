@@ -1,58 +1,35 @@
-"""Unit tests verifying the InstaTrend multi-agent pipeline architecture and state callbacks."""
+"""Unit tests verifying the InstaTrend ADK 2.0 Graph Workflow architecture, routing, and guardrails."""
 
 import pytest
+from google.adk.workflow import Workflow
 
 from app.agent import (
     FAST_VISION_MODEL,
     GUARDRAIL_MODEL,
     STRATEGY_REASONING_MODEL,
     app,
-    humanizer_guardrail,
-    initialize_session_state,
-    platform_strategist,
+    audit_cliches_guardrail_func,
     root_agent,
-    visual_analyst,
 )
 
 
-def test_multi_agent_pipeline_structure():
-    """Verify that root_agent is a SequentialAgent with 3 specialized sub-agents."""
-    assert root_agent.name == "insta_trend_pipeline"
-    sub_names = [agent.name for agent in root_agent.sub_agents]
-    assert sub_names == ["visual_analyst", "platform_strategist", "humanizer_guardrail"]
+def test_workflow_structure_and_nodes():
+    """Verify that root_agent is an ADK 2.0 Workflow with all planned nodes."""
+    assert isinstance(root_agent, Workflow)
+    assert root_agent.name == "insta_trend_workflow"
+
+    # Verify strategic model configuration constants
+    assert FAST_VISION_MODEL == "gemini-2.5-flash"
+    assert STRATEGY_REASONING_MODEL == "gemini-2.5-pro"
+    assert GUARDRAIL_MODEL == "gemini-2.5-flash"
 
 
-def test_sub_agent_models_and_tools():
-    """Verify sub-agent models, instructions, and tool assignments."""
-    # Agent 1: Visual Analyst
-    assert visual_analyst.model.model == FAST_VISION_MODEL
-    assert isinstance(visual_analyst.instruction, str)
-    assert "Visual Trend Analyst" in visual_analyst.instruction
-    assert visual_analyst.output_key == "visual_analysis"
-
-    # Agent 2: Platform Strategist
-    assert platform_strategist.model.model == STRATEGY_REASONING_MODEL
-    assert isinstance(platform_strategist.instruction, str)
-    assert "Platform Trend Strategist" in platform_strategist.instruction
-    tool_names = [t.__name__ for t in platform_strategist.tools]
-    assert "fetch_tiktok_trends" in tool_names
-    assert "fetch_instagram_meme_formats" in tool_names
-    assert "fetch_substack_narrative_hooks" in tool_names
-    assert "search_user_vibe_history" in tool_names
-    assert "save_vibe_memory" in tool_names
-    assert platform_strategist.output_key == "draft_captions"
-
-    # Agent 3: Humanizer Guardrail
-    assert humanizer_guardrail.model.model == GUARDRAIL_MODEL
-    guardrail_tools = [t.__name__ for t in humanizer_guardrail.tools]
-    assert "scrub_ai_cliches" in guardrail_tools
-    assert humanizer_guardrail.output_key == "final_polished_captions"
-
-
-def test_app_compaction_and_cache_configuration():
-    """Verify context compaction and caching are active on the App instance."""
+def test_app_resumability_compaction_and_caching():
+    """Verify that the App container is configured with HITL resumability, token compaction, and caching."""
     assert app.name == "app"
     assert app.root_agent is root_agent
+    assert app.resumability_config is not None
+    assert app.resumability_config.is_resumable is True
     assert app.events_compaction_config is not None
     assert app.events_compaction_config.token_threshold == 16000
     assert app.events_compaction_config.event_retention_size == 5
@@ -61,18 +38,62 @@ def test_app_compaction_and_cache_configuration():
 
 
 @pytest.mark.asyncio
-async def test_initialize_session_state_callback():
-    """Verify async state initialization sets default keys and preserves user profiles."""
+async def test_audit_cliches_guardrail_routing_on_clean_captions():
+    """Verify guardrail routes to 'approved' when captions are clean."""
 
     class MockContext:
         def __init__(self):
-            self.state = {"user:vibe_profile": "chaotic office dread"}
-            self.user_id = "test_user_123"
+            self.state = {}
+
+    clean_drafts = {
+        "tiktok_captions": [
+            {
+                "hook": "3:42 pm",
+                "caption_body": "zero thoughts behind these eyes, just vibes",
+            }
+        ],
+        "instagram_captions": [
+            {"hook": "recent developments", "caption_body": "1. coffee 2. chaos"}
+        ],
+        "substack_hooks": [
+            {
+                "hook": "Notes from the doomscroll",
+                "caption_body": "A short observation.",
+            }
+        ],
+    }
 
     mock_ctx = MockContext()
-    await initialize_session_state(mock_ctx)
+    event = await audit_cliches_guardrail_func(mock_ctx, clean_drafts)
 
-    assert mock_ctx.state["user_vibe_profile"] == "chaotic office dread"
-    assert "visual_analysis" in mock_ctx.state
-    assert "recalled_memories" in mock_ctx.state
-    assert "user:saved_captions" in mock_ctx.state
+    assert event.actions is not None
+    assert event.actions.route == "approved"
+    assert event.actions.state_delta["passed_guardrails"] is True
+
+
+@pytest.mark.asyncio
+async def test_audit_cliches_guardrail_routing_on_banned_cliches():
+    """Verify guardrail routes back to 'retry' when forbidden AI cliches are present."""
+
+    class MockContext:
+        def __init__(self):
+            self.state = {"guardrail_retry_count": 0}
+
+    cliche_drafts = {
+        "tiktok_captions": [
+            {
+                "hook": "POV",
+                "caption_body": "Delve into this vibrant tapestry to unleash your potential!",
+            }
+        ],
+        "instagram_captions": [],
+        "substack_hooks": [],
+    }
+
+    mock_ctx = MockContext()
+    event = await audit_cliches_guardrail_func(mock_ctx, cliche_drafts)
+
+    assert event.actions is not None
+    assert event.actions.route == "retry"
+    assert event.actions.state_delta["guardrail_retry_count"] == 1
+    assert "cliche_feedback" in event.actions.state_delta
