@@ -62,7 +62,44 @@ BANNED_AI_CLICHES: list[str] = [
 
 # TikTok meme repository indexed by topic and tone
 TIKTOK_TREND_DATABASE: dict[str, list[dict[str, str]]] = {
+    "lifestyle": [
+        {
+            "format_name": "The 'Kinda chic / Kinda hot' Reframe",
+            "sound_or_trope": "Crisp French cafe indie jazz / understated vinyl crackle",
+            "structure_template": "kinda {chic_or_hot} to {unconventional_mundane_or_solitary_action}.",
+            "humor_style": "effortless status reframe",
+            "example": "kinda chic to eat dinner alone at the counter with a paperback and zero notifications.",
+        },
+        {
+            "format_name": "Early & Unbothered",
+            "sound_or_trope": "Subtle bassline groove with elevator chic",
+            "structure_template": "kinda hot to {unexpected_hyper_competence_or_calm}.",
+            "humor_style": "dry confident reframe",
+            "example": "kinda hot to show up 15 minutes early to work with an iced americano and zero explanation.",
+        },
+        {
+            "format_name": "The Romanticize Everything Delusion",
+            "sound_or_trope": "Lana Del Rey slow reverb audio",
+            "structure_template": "pretending my $9 iced oat latte and crippling indecision is a cinematic aesthetic.",
+            "humor_style": "self-deprecating aesthetic irony",
+            "example": "romanticizing my morning routine as if i didn't hit snooze 6 times and sprint for the bus in mismatched socks.",
+        },
+        {
+            "format_name": "Girl Dinner / Solo Era Reality",
+            "sound_or_trope": "Cheery 1950s jingle with discordant finish",
+            "structure_template": "3 pickles, a spoonful of peanut butter, and an unbothered attitude.",
+            "humor_style": "hyper-relatable chaotic dining",
+            "example": "my nutritionist watching me call 4 saltines and a cold cold-brew 'a balanced Mediterranean lunch'.",
+        },
+    ],
     "corporate": [
+        {
+            "format_name": "The 'Kinda chic' Corporate Boundary",
+            "sound_or_trope": "Muted Teams call chime into smooth lo-fi beats",
+            "structure_template": "kinda chic to {firm_unapologetic_workplace_boundary}.",
+            "humor_style": "unbothered work boundary",
+            "example": "kinda chic to close my laptop at 4:59 PM and become completely unreachable until Monday morning.",
+        },
         {
             "format_name": "Sent from my iPhone at 4:58 PM",
             "sound_or_trope": "Distorted elevator music / corporate Teams notification chime",
@@ -78,54 +115,66 @@ TIKTOK_TREND_DATABASE: dict[str, list[dict[str, str]]] = {
             "example": "What I typed: 'Circling back!' vs What I meant: 'I have aged 14 lunar cycles since Monday.'",
         },
     ],
-    "lifestyle": [
-        {
-            "format_name": "The Romanticize Everything Delusion",
-            "sound_or_trope": "Lana Del Rey slow reverb audio",
-            "structure_template": "pretending my $9 iced oat latte and crippling indecision is a cinematic aesthetic.",
-            "humor_style": "self-deprecating aesthetic irony",
-            "example": "romanticizing my morning routine as if i didn't hit snooze 6 times and sprint for the bus in mismatched socks.",
-        },
-        {
-            "format_name": "Girl Dinner / Boy Lunch Reality",
-            "sound_or_trope": "Cheery 1950s jingle with discordant finish",
-            "structure_template": "3 pickles, a spoonful of peanut butter, and a dream.",
-            "humor_style": "hyper-relatable chaotic dining",
-            "example": "my nutritionist watching me call 4 saltines and a cold cold-brew 'a balanced Mediterranean lunch'.",
-        },
-    ],
     "food": [
+        {
+            "format_name": "The 'Kinda chic' Chaotic Culinary Reframe",
+            "sound_or_trope": "Bossa nova accordion playing over a kitchen fire",
+            "structure_template": "kinda chic to {imperfect_or_absurd_food_habit}.",
+            "humor_style": "aestheticized culinary chaos",
+            "example": "kinda chic to eat cold sourdough toast over the sink in cashmere socks.",
+        },
         {
             "format_name": "Culinary Chaos / Chef Delusion",
             "sound_or_trope": "Ratatouille theme on a kazoo",
             "structure_template": "watching a 45-second cooking reel vs the crime scene currently in my kitchen.",
             "humor_style": "cooking expectation vs reality",
             "example": "the recipe said 'prep time 10 mins' but didn't account for the 40 minutes i spent negotiating with a stubborn shallot.",
-        }
+        },
     ],
     "dating": [
+        {
+            "format_name": "The 'Kinda hot' Independent Reframe",
+            "sound_or_trope": "Heavy cinematic drum hit",
+            "structure_template": "kinda hot to {unapologetic_single_behavior}.",
+            "humor_style": "effortless confidence",
+            "example": "kinda hot to buy yourself the expensive flowers and leave the group chat on read.",
+        },
         {
             "format_name": "Red Flag Collector",
             "sound_or_trope": "Circus music crescendo",
             "structure_template": "He's a 10 but {bizarre_specific_habit}.",
             "humor_style": "modern dating absurdism",
             "example": "he's a 10 but he types 'haha' with zero facial emotion while staring dead into your eyes.",
-        }
+        },
     ],
     "general": [
+        {
+            "format_name": "The 'Kinda chic' Mundane Reframe",
+            "sound_or_trope": "Acoustic strings with deadpan voiceover",
+            "structure_template": "kinda chic to {ordinary_daily_micro_action}.",
+            "humor_style": "observational irony",
+            "example": "kinda chic to go to bed at 9:30 pm and cancel all Saturday morning obligations.",
+        },
         {
             "format_name": "Dissociative Stare POV",
             "sound_or_trope": "Muffled underwater synth bass",
             "structure_template": "POV: you're physically present at {event} but spiritually you are on a distant asteroid.",
             "humor_style": "deadpan dissociation",
             "example": "nodding politely in the group chat while having an out-of-body realization about the passage of time.",
-        }
+        },
     ],
 }
 
 # Instagram meme and photo dump formats
 INSTAGRAM_MEME_DATABASE: dict[str, list[dict[str, str]]] = {
     "carousel_dump": [
+        {
+            "format_name": "The 'Kinda chic' Photo Dump Understatement",
+            "hook_style": "deadpan status reframe",
+            "caption_structure": "kinda chic to {action} + photo catalog breakdown.",
+            "visual_pairing_advice": "Lead with a slightly out-of-focus aesthetic shot, followed by an ultra-specific daily screenshot.",
+            "example": "kinda chic to have no idea what's happening. slide 3 is the blueprint, slide 5 is an apology.",
+        },
         {
             "format_name": "The Chaotic Understated Photo Dump",
             "hook_style": "dry deadpan one-liner",
@@ -142,6 +191,13 @@ INSTAGRAM_MEME_DATABASE: dict[str, list[dict[str, str]]] = {
         },
     ],
     "single_photo": [
+        {
+            "format_name": "The 'Kinda hot' Single Shot",
+            "hook_style": "short declarative reframe",
+            "caption_structure": "kinda hot to {ironic_contrast_action}.",
+            "visual_pairing_advice": "High contrast portrait, candid angle, or intentional motion blur.",
+            "example": "kinda hot to be completely unbothered by things out of my control.",
+        },
         {
             "format_name": "The Visual Irony Contrast",
             "hook_style": "extreme understatement",
@@ -171,6 +227,13 @@ INSTAGRAM_MEME_DATABASE: dict[str, list[dict[str, str]]] = {
 # Substack hooks indexed by essay theme
 SUBSTACK_HOOK_DATABASE: dict[str, list[dict[str, str]]] = {
     "cultural_commentary": [
+        {
+            "hook_headline": "The 'kinda chic' economy: why we turned minor isolation into high fashion",
+            "opening_sentence": "Somewhere between burnout and social exhaustion, we decided that doing absolutely nothing alone was the ultimate luxury.",
+            "narrative_angle": "re-examining modern aesthetic coping mechanisms",
+            "wit_tone": "incisive, wry, intellectualized observational wit",
+            "example_expansion": "To eat dinner alone at a diner counter used to signify a tragic film noir climax; in 2026, it is marketed as the pinnacle of self-actualized chic.",
+        },
         {
             "hook_headline": "On the unbearable performance of being 'well-adjusted'",
             "opening_sentence": "We have reached the point in late capitalism where even our hobbies require key performance indicators.",

@@ -79,16 +79,19 @@ def _get_genai_client() -> genai.Client:
 
 
 @node(name="visual_trend_analyst")
-async def visual_analysis_node(ctx: Context, node_input: Any) -> dict[str, Any]:
+async def visual_analysis_node(ctx: Context, node_input: Any = None) -> dict[str, Any]:
     """Node 1: Rapid multimodal visual perception and cultural pattern extraction (gemini-2.5-flash)."""
     logger.info("Executing visual_analysis_node with input: %s", str(node_input)[:100])
 
-    # Extract user input text or description
+    # Extract user input text and image parts directly from multimodal Content
+    multimodal_parts: list[Any] = []
     input_text = ""
     if isinstance(node_input, types.Content):
         for part in node_input.parts:
             if part.text:
                 input_text += part.text + " "
+            if part.inline_data or part.file_data:
+                multimodal_parts.append(part)
     elif isinstance(node_input, str):
         input_text = node_input
     elif isinstance(node_input, dict):
@@ -99,7 +102,11 @@ async def visual_analysis_node(ctx: Context, node_input: Any) -> dict[str, Any]:
     log_intent(
         "visual_trend_analyst",
         "extracting_visual_semantics",
-        {"input_preview": input_text[:60], "model": FAST_VISION_MODEL},
+        {
+            "input_preview": input_text[:60],
+            "has_multimodal_image": len(multimodal_parts) > 0,
+            "model": FAST_VISION_MODEL,
+        },
     )
 
     # Ingest persistent user vibe profile if present
@@ -112,17 +119,21 @@ async def visual_analysis_node(ctx: Context, node_input: Any) -> dict[str, Any]:
         prompt = (
             f"{SYSTEM_CONSTITUTION}\n\n{VISUAL_ANALYST_INSTRUCTION}\n\n"
             f"User Vibe Context: {user_vibe}\n"
-            f"Input Scene/Visual Description: {input_text}\n\n"
-            "Return a JSON object conforming to VisualAnalysisResult schema."
+            f"Input Scene / User Text: {input_text or 'Multimodal image uploaded.'}\n\n"
+            "Analyze the image / scene visual contrast and return a JSON object conforming to VisualAnalysisResult schema."
         )
+
+        # Build contents supporting both text prompt and direct image bytes
+        contents_list: list[Any] = [prompt, *multimodal_parts]
 
         response = await client.aio.models.generate_content(
             model=FAST_VISION_MODEL,
-            contents=prompt,
+            contents=contents_list,
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
                 response_schema=VisualAnalysisResult,
-                temperature=0.3,
+                temperature=0.4,
+                top_p=0.9,
             ),
         )
         analysis_data = json.loads(response.text) if response.text else {}
@@ -136,13 +147,20 @@ async def visual_analysis_node(ctx: Context, node_input: Any) -> dict[str, Any]:
         )
     except Exception as e:
         logger.warning("Visual analysis fallback engaged due to: %s", e)
+        # Context-aware fallback parsing
+        detected_words = [w for w in input_text.lower().split() if len(w) > 3][:3]
+        focals = (
+            detected_words
+            if detected_words
+            else ["lifestyle moment", "ambient setting"]
+        )
         analysis_data = {
-            "focal_elements": ["scene subject", "ambient setting"],
-            "detected_emotions": ["relatable exhaustion", "mild irony"],
-            "aesthetic_vibe": "chaotic casual",
-            "visual_irony_or_contrast": "tension between internal monologue and external composure",
-            "cultural_archetypes": ["burnout humor", "notes app creator"],
-            "summary_for_strategist": f"User provided scene: '{input_text}'. Focus on relatable, self-deprecating wit.",
+            "focal_elements": focals,
+            "detected_emotions": ["quiet confidence", "relatable exhaustion"],
+            "aesthetic_vibe": "kinda chic casual",
+            "visual_irony_or_contrast": "tension between effortless aesthetic and underlying daily chaos",
+            "cultural_archetypes": ["unbothered solo era", "notes app creator"],
+            "summary_for_strategist": f"User visual scene with {', '.join(focals)}. Emphasize 'kinda chic / kinda hot' observational humor.",
         }
         log_outcome("visual_trend_analyst", "fallback", error=str(e))
 
@@ -152,7 +170,9 @@ async def visual_analysis_node(ctx: Context, node_input: Any) -> dict[str, Any]:
 
 
 @node(name="platform_trend_strategist", rerun_on_resume=True)
-async def platform_strategist_node(ctx: Context, node_input: Any) -> dict[str, Any]:
+async def platform_strategist_node(
+    ctx: Context, node_input: Any = None
+) -> dict[str, Any]:
     """Node 2: Heavy creative synthesis using gemini-2.5-pro and real-time cultural tools."""
     logger.info("Executing platform_strategist_node")
 
@@ -194,11 +214,11 @@ async def platform_strategist_node(ctx: Context, node_input: Any) -> dict[str, A
             f"Visual Analysis: {json.dumps(visual_data)}\n"
             f"User Profile: {user_vibe}\n"
             f"Past Successful Styles: {recalled_memories}\n"
-            f"TikTok Live Formats: {json.dumps(tiktok_data)}\n"
+            f"TikTok Live Formats (including 'Kinda chic / Kinda hot'): {json.dumps(tiktok_data)}\n"
             f"Instagram Live Formats: {json.dumps(ig_data)}\n"
             f"Substack Live Hooks: {json.dumps(substack_data)}\n"
             f"{feedback_prompt}\n"
-            "Generate 3 platform-tailored caption packages for TikTok, Instagram, and Substack in JSON."
+            "Generate 3 non-repetitive, platform-tailored caption packages for TikTok, Instagram, and Substack in JSON."
         )
 
         response = await client.aio.models.generate_content(
@@ -207,7 +227,8 @@ async def platform_strategist_node(ctx: Context, node_input: Any) -> dict[str, A
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
                 response_schema=PlatformDraftCaptions,
-                temperature=0.7,
+                temperature=0.88,
+                top_p=0.95,
             ),
         )
         drafts = json.loads(response.text) if response.text else {}
@@ -222,35 +243,51 @@ async def platform_strategist_node(ctx: Context, node_input: Any) -> dict[str, A
         )
     except Exception as e:
         logger.warning("Platform strategist fallback engaged: %s", e)
+        focal_str = ", ".join(visual_data.get("focal_elements", ["coffee", "laptop"]))
+        vibe_str = visual_data.get("aesthetic_vibe", "chaotic casual")
         drafts = {
             "tiktok_captions": [
                 {
                     "platform": "tiktok",
+                    "style_variant": "kinda_chic_reframe",
+                    "hook": "kinda chic to be completely unreachable",
+                    "caption_body": f"kinda hot to show up with {focal_str} and zero explanation.",
+                    "hashtags": ["#kindachic", "#relatable", "#creatorlife"],
+                },
+                {
+                    "platform": "tiktok",
                     "style_variant": "self_deprecating",
                     "hook": "POV: you said 'i will lock in' 4 hours ago",
-                    "caption_body": "the way i have accomplished zero tasks and invented 3 new existential crises.",
+                    "caption_body": f"the way i have accomplished zero tasks and romanticized {focal_str} instead.",
                     "hashtags": ["#relatable", "#wfhproblems"],
-                }
+                },
             ],
             "instagram_captions": [
                 {
                     "platform": "instagram",
+                    "style_variant": "kinda_hot_understatement",
+                    "hook": "kinda chic",
+                    "caption_body": f"kinda chic to exist in my unbothered era with {focal_str}. slide 3 is a warning.",
+                    "hashtags": ["#photodump", "#casualinstagram", "#kindachic"],
+                },
+                {
+                    "platform": "instagram",
                     "style_variant": "photo_dump_irony",
                     "hook": "recent developments",
-                    "caption_body": "1. lukewarm matcha 2. questionable life choices 3. slide 4 is a warning.",
+                    "caption_body": f"1. {focal_str} 2. questionable life choices 3. slide 4 is an apology to my schedule.",
                     "hashtags": ["#photodump", "#casualinstagram"],
-                }
+                },
             ],
             "substack_hooks": [
                 {
                     "platform": "substack",
                     "style_variant": "cultural_critique",
-                    "hook": "Notes on the performance of being functional",
-                    "caption_body": "We have reached the era where even resting requires an optimized schedule.",
+                    "hook": f"The 'kinda chic' economy of {vibe_str}",
+                    "caption_body": f"We have reached the era where even managing {focal_str} requires an optimized aesthetic posture.",
                     "hashtags": [],
                 }
             ],
-            "strategy_rationale": "Grounded in deadpan observational humor with zero generic corporate phrasing.",
+            "strategy_rationale": "Grounded in deadpan 'kinda chic / kinda hot' observational humor tailored dynamically to the scene context.",
         }
         log_outcome("platform_trend_strategist", "fallback", error=str(e))
 
