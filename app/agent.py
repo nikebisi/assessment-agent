@@ -258,12 +258,17 @@ async def platform_strategist_node(ctx: Context, node_input: Any) -> dict[str, A
     return drafts
 
 
-async def audit_cliches_guardrail_func(
-    ctx: Context, node_input: dict[str, Any]
-) -> Event:
+async def audit_cliches_guardrail_func(ctx: Context, node_input: Any = None) -> Event:
     """Core logic for auditing drafts against banned clichés and generating closed-loop routing."""
     logger.info("Executing audit_cliches_guardrail")
     retry_count = ctx.state.get("guardrail_retry_count", 0)
+
+    # Safely resolve draft captions from input or state
+    drafts: dict[str, Any] = (
+        node_input
+        if isinstance(node_input, dict) and node_input
+        else ctx.state.get("draft_captions", {})
+    )
 
     log_intent(
         "humanizer_cliche_guardrail",
@@ -274,7 +279,7 @@ async def audit_cliches_guardrail_func(
     # Flatten all caption texts to run deterministic cliché scrubber
     all_texts: list[str] = []
     for platform_key in ("tiktok_captions", "instagram_captions", "substack_hooks"):
-        for item in node_input.get(platform_key, []):
+        for item in drafts.get(platform_key, []):
             if isinstance(item, dict):
                 all_texts.append(item.get("hook", ""))
                 all_texts.append(item.get("caption_body", ""))
@@ -297,6 +302,7 @@ async def audit_cliches_guardrail_func(
             {"retry_count": retry_count + 1, "cliches": audit_res["detected_cliches"]},
         )
         return Event(
+            output=drafts,
             actions=EventActions(
                 route="retry",
                 state_delta={
@@ -304,7 +310,7 @@ async def audit_cliches_guardrail_func(
                     or audit_res["critique"],
                     "guardrail_retry_count": retry_count + 1,
                 },
-            )
+            ),
         )
 
     # Cleaned and approved
@@ -315,6 +321,7 @@ async def audit_cliches_guardrail_func(
         {"passed_clean": audit_res["is_clean"], "total_retries": retry_count},
     )
     return Event(
+        output=drafts,
         actions=EventActions(
             route="approved",
             state_delta={
@@ -322,22 +329,28 @@ async def audit_cliches_guardrail_func(
                 "cliche_feedback": None,
                 "passed_guardrails": audit_res["is_clean"],
             },
-        )
+        ),
     )
 
 
 @node(name="humanizer_cliche_guardrail")
-async def audit_cliches_guardrail(ctx: Context, node_input: dict[str, Any]) -> Event:
+async def audit_cliches_guardrail(ctx: Context, node_input: Any = None) -> Event:
     """Node 3: Quality guardrail node auditing drafts against banned clichés and routing feedback."""
     return await audit_cliches_guardrail_func(ctx, node_input)
 
 
 @node(name="human_in_the_loop_approval", rerun_on_resume=True)
 async def human_approval_hook(
-    ctx: Context, node_input: dict[str, Any]
+    ctx: Context, node_input: Any = None
 ) -> AsyncGenerator[Any, None]:
     """Node 4: Human-in-the-Loop (HITL) manual quality gate before publishing."""
     logger.info("Executing human_approval_hook. Resume inputs: %s", ctx.resume_inputs)
+
+    drafts: dict[str, Any] = (
+        node_input
+        if isinstance(node_input, dict) and node_input
+        else ctx.state.get("draft_captions", {})
+    )
 
     log_intent(
         "human_in_the_loop_approval",
@@ -347,13 +360,13 @@ async def human_approval_hook(
 
     # Format a preview summary for the reviewer
     preview_lines = ["\n✨ **Generated Viral Captions Preview:**"]
-    for t in node_input.get("tiktok_captions", []):
+    for t in drafts.get("tiktok_captions", []):
         text = t.get("caption_body") if isinstance(t, dict) else t
         preview_lines.append(f"- 📱 **TikTok**: {text}")
-    for i in node_input.get("instagram_captions", []):
+    for i in drafts.get("instagram_captions", []):
         text = i.get("caption_body") if isinstance(i, dict) else i
         preview_lines.append(f"- 📸 **Instagram**: {text}")
-    for s in node_input.get("substack_hooks", []):
+    for s in drafts.get("substack_hooks", []):
         text = s.get("caption_body") if isinstance(s, dict) else s
         preview_lines.append(f"- ✍️ **Substack**: {text}")
 
@@ -380,19 +393,26 @@ async def human_approval_hook(
         )
         return
 
-    # Handle resumed user decision
-    user_response = (
-        str(ctx.resume_inputs.get("caption_approval", "approve")).strip().lower()
-    )
+    # Handle resumed user decision (extract string whether passed as dict or string)
+    raw_response = ctx.resume_inputs.get("caption_approval", "approve")
+    if isinstance(raw_response, dict):
+        user_response = (
+            str(raw_response.get("response", raw_response.get("input", "approve")))
+            .strip()
+            .lower()
+        )
+    else:
+        user_response = str(raw_response).strip().lower()
     logger.info("User HITL response: %s", user_response)
 
     if user_response in ("approve", "approved", "yes", "y", "ok", "looks good", "lgtm"):
         log_outcome("human_in_the_loop_approval", "approved", {"decision": "finalize"})
         yield Event(
+            output=drafts,
             actions=EventActions(
                 route="finalize",
                 state_delta={"user_revision_feedback": None},
-            )
+            ),
         )
     else:
         # Route back to strategist with specific human guidance
@@ -400,37 +420,44 @@ async def human_approval_hook(
             "human_in_the_loop_approval", "revision_requested", {"decision": "revise"}
         )
         yield Event(
+            output=drafts,
             actions=EventActions(
                 route="revise",
                 state_delta={
                     "user_revision_feedback": f"User requested revisions: {user_response}"
                 },
-            )
+            ),
         )
 
 
 @node(name="finalize_and_publish")
 async def publish_and_finalize_node(
-    ctx: Context, node_input: dict[str, Any]
+    ctx: Context, node_input: Any = None
 ) -> AsyncGenerator[Any, None]:
     """Node 5: Formats and emits finalized captions, saving to persistent user state."""
     logger.info("Finalizing and publishing captions.")
     log_intent("finalize_and_publish", "formatting_and_saving_captions")
 
+    drafts: dict[str, Any] = (
+        node_input
+        if isinstance(node_input, dict) and node_input
+        else ctx.state.get("draft_captions", {})
+    )
+
     tiktok_list: list[str] = []
-    for item in node_input.get("tiktok_captions", []):
+    for item in drafts.get("tiktok_captions", []):
         tiktok_list.append(
             item.get("caption_body") if isinstance(item, dict) else str(item)
         )
 
     ig_list: list[str] = []
-    for item in node_input.get("instagram_captions", []):
+    for item in drafts.get("instagram_captions", []):
         ig_list.append(
             item.get("caption_body") if isinstance(item, dict) else str(item)
         )
 
     substack_list: list[str] = []
-    for item in node_input.get("substack_hooks", []):
+    for item in drafts.get("substack_hooks", []):
         substack_list.append(
             item.get("caption_body") if isinstance(item, dict) else str(item)
         )
