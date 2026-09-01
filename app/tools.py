@@ -18,6 +18,7 @@ from app.models import (
     TikTokTrendItem,
     TikTokTrendResponse,
 )
+from app.observability import log_intent, log_outcome
 
 # Comprehensive catalog of banned AI-generated clichés and robotic cadences
 BANNED_AI_CLICHES: list[str] = [
@@ -222,6 +223,11 @@ def fetch_tiktok_trends(category: str, tone: str = "ironic") -> dict[str, Any]:
         A dictionary conforming to TikTokTrendResponse containing matching trends,
         sound cues, and structural templates.
     """
+    log_intent(
+        "fetch_tiktok_trends",
+        "fetching_tiktok_trends",
+        {"category": category, "tone": tone},
+    )
     try:
         normalized_cat = category.strip().lower()
         if not normalized_cat:
@@ -253,9 +259,16 @@ def fetch_tiktok_trends(category: str, tone: str = "ironic") -> dict[str, Any]:
             if matched_category == normalized_cat
             else f"Category '{category}' was not found in exact index; defaulted to 'general'. Valid categories are: {list(TIKTOK_TREND_DATABASE.keys())}.",
         )
-        return response.model_dump()
+        result_dict = response.model_dump()
+        log_outcome(
+            "fetch_tiktok_trends",
+            "success",
+            {"count": len(items), "category": matched_category},
+        )
+        return result_dict
 
     except Exception as e:
+        log_outcome("fetch_tiktok_trends", "error", error=str(e))
         return TikTokTrendResponse(
             status="error",
             category=category,
@@ -282,6 +295,11 @@ def fetch_instagram_meme_formats(
         A dictionary conforming to InstagramMemeResponse with format templates
         and visual pairing advice.
     """
+    log_intent(
+        "fetch_instagram_meme_formats",
+        "fetching_instagram_formats",
+        {"post_type": post_type, "vibe": vibe},
+    )
     try:
         normalized_type = post_type.strip().lower()
         if normalized_type not in INSTAGRAM_MEME_DATABASE:
@@ -313,9 +331,16 @@ def fetch_instagram_meme_formats(
             recommended_hashtags=hashtags,
             recovery_guidance=None,
         )
-        return response.model_dump()
+        result_dict = response.model_dump()
+        log_outcome(
+            "fetch_instagram_meme_formats",
+            "success",
+            {"count": len(items), "post_type": normalized_type},
+        )
+        return result_dict
 
     except Exception as e:
+        log_outcome("fetch_instagram_meme_formats", "error", error=str(e))
         return InstagramMemeResponse(
             status="error",
             post_type=post_type,
@@ -343,6 +368,11 @@ def fetch_substack_narrative_hooks(
         A dictionary conforming to SubstackHookResponse with essay headlines,
         opening hooks, and narrative expansions.
     """
+    log_intent(
+        "fetch_substack_narrative_hooks",
+        "fetching_substack_hooks",
+        {"theme": theme, "wit_level": wit_level},
+    )
     try:
         normalized_theme = theme.strip().lower()
         if normalized_theme not in SUBSTACK_HOOK_DATABASE:
@@ -369,9 +399,16 @@ def fetch_substack_narrative_hooks(
             if normalized_theme == theme
             else f"Theme '{theme}' was normalized to '{normalized_theme}'. Available themes: {list(SUBSTACK_HOOK_DATABASE.keys())}.",
         )
-        return response.model_dump()
+        result_dict = response.model_dump()
+        log_outcome(
+            "fetch_substack_narrative_hooks",
+            "success",
+            {"count": len(items), "theme": normalized_theme},
+        )
+        return result_dict
 
     except Exception as e:
+        log_outcome("fetch_substack_narrative_hooks", "error", error=str(e))
         return SubstackHookResponse(
             status="error",
             theme=theme,
@@ -396,8 +433,16 @@ def scrub_ai_cliches(caption_text: str) -> dict[str, Any]:
         A dictionary conforming to ScrubResult containing cleanliness status,
         detected clichés, cringe severity score (0-10), critique, and cleaned text.
     """
+    log_intent(
+        "scrub_ai_cliches",
+        "auditing_caption_cliches",
+        {"input_length": len(caption_text)},
+    )
     try:
         if not caption_text or not caption_text.strip():
+            log_outcome(
+                "scrub_ai_cliches", "success", {"is_clean": True, "detected": []}
+            )
             return ScrubResult(
                 status="success",
                 is_clean=True,
@@ -486,9 +531,16 @@ def scrub_ai_cliches(caption_text: str) -> dict[str, Any]:
             critique=" ".join(critique_parts),
             recovery_guidance=recovery_msg,
         )
-        return result.model_dump()
+        result_dict = result.model_dump()
+        log_outcome(
+            "scrub_ai_cliches",
+            "success",
+            {"is_clean": is_clean, "severity": severity, "cliches": found_cliches},
+        )
+        return result_dict
 
     except Exception as e:
+        log_outcome("scrub_ai_cliches", "error", error=str(e))
         return ScrubResult(
             status="error",
             is_clean=False,
@@ -512,6 +564,7 @@ async def search_user_vibe_history(
     Returns:
         A dictionary containing matched past memory records, preferred vibes, and status.
     """
+    log_intent("search_user_vibe_history", "searching_memory_bank", {"query": query})
     try:
         memories: list[str] = []
         if hasattr(tool_context, "search_memory"):
@@ -535,7 +588,7 @@ async def search_user_vibe_history(
         if not matched and past_captions:
             matched = past_captions[-3:]
 
-        return {
+        result = {
             "status": "success",
             "query": query,
             "user_vibe_profile": user_vibe,
@@ -543,7 +596,12 @@ async def search_user_vibe_history(
             "count": len(memories or matched),
             "recovery_guidance": None,
         }
+        log_outcome(
+            "search_user_vibe_history", "success", {"count": len(memories or matched)}
+        )
+        return result
     except Exception as e:
+        log_outcome("search_user_vibe_history", "error", error=str(e))
         return {
             "status": "error",
             "query": query,
@@ -567,6 +625,7 @@ async def save_vibe_memory(
     Returns:
         A dictionary confirming memory persistence status and updated profile.
     """
+    log_intent("save_vibe_memory", "persisting_user_vibe", {"vibe": vibe})
     try:
         updated_profile = f"{vibe} | {style_notes}".strip(" |")
         tool_context.state["user:vibe_profile"] = updated_profile
@@ -576,13 +635,16 @@ async def save_vibe_memory(
             saved_captions.append(style_notes)
             tool_context.state["user:saved_captions"] = saved_captions[-10:]
 
-        return {
+        result = {
             "status": "success",
             "vibe_saved": vibe,
             "updated_profile": updated_profile,
             "recovery_guidance": None,
         }
+        log_outcome("save_vibe_memory", "success", {"vibe": vibe})
+        return result
     except Exception as e:
+        log_outcome("save_vibe_memory", "error", error=str(e))
         return {
             "status": "error",
             "vibe_saved": vibe,

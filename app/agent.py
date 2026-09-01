@@ -33,6 +33,11 @@ from app.models import (
     PlatformDraftCaptions,
     VisualAnalysisResult,
 )
+from app.observability import (
+    configure_structured_logging,
+    log_intent,
+    log_outcome,
+)
 from app.prompts import (
     PLATFORM_STRATEGIST_INSTRUCTION,
     SYSTEM_CONSTITUTION,
@@ -45,6 +50,8 @@ from app.tools import (
     scrub_ai_cliches,
 )
 
+# Initialize structured JSON logging
+configure_structured_logging()
 logger = logging.getLogger("instatrend.agent")
 
 # Strategic Model Routing constants
@@ -89,6 +96,12 @@ async def visual_analysis_node(ctx: Context, node_input: Any) -> dict[str, Any]:
     else:
         input_text = "Casual lifestyle moment with comic contrast."
 
+    log_intent(
+        "visual_trend_analyst",
+        "extracting_visual_semantics",
+        {"input_preview": input_text[:60], "model": FAST_VISION_MODEL},
+    )
+
     # Ingest persistent user vibe profile if present
     user_vibe = ctx.state.get(
         "user:vibe_profile", "authentic, witty, self-aware creator"
@@ -113,6 +126,14 @@ async def visual_analysis_node(ctx: Context, node_input: Any) -> dict[str, Any]:
             ),
         )
         analysis_data = json.loads(response.text) if response.text else {}
+        log_outcome(
+            "visual_trend_analyst",
+            "success",
+            {
+                "focal_elements": analysis_data.get("focal_elements"),
+                "vibe": analysis_data.get("aesthetic_vibe"),
+            },
+        )
     except Exception as e:
         logger.warning("Visual analysis fallback engaged due to: %s", e)
         analysis_data = {
@@ -123,6 +144,7 @@ async def visual_analysis_node(ctx: Context, node_input: Any) -> dict[str, Any]:
             "cultural_archetypes": ["burnout humor", "notes app creator"],
             "summary_for_strategist": f"User provided scene: '{input_text}'. Focus on relatable, self-deprecating wit.",
         }
+        log_outcome("visual_trend_analyst", "fallback", error=str(e))
 
     # Persist in session state
     ctx.state["visual_analysis"] = analysis_data
@@ -139,6 +161,16 @@ async def platform_strategist_node(ctx: Context, node_input: Any) -> dict[str, A
     recalled_memories = ctx.state.get("user:saved_captions", [])
     cliche_feedback = ctx.state.get("cliche_feedback")
     user_revision = ctx.state.get("user_revision_feedback")
+
+    log_intent(
+        "platform_trend_strategist",
+        "synthesizing_viral_captions",
+        {
+            "model": STRATEGY_REASONING_MODEL,
+            "has_cliche_feedback": bool(cliche_feedback),
+            "has_user_revision": bool(user_revision),
+        },
+    )
 
     # Query culture tools
     tiktok_data = fetch_tiktok_trends(category="lifestyle", tone="ironic")
@@ -179,6 +211,15 @@ async def platform_strategist_node(ctx: Context, node_input: Any) -> dict[str, A
             ),
         )
         drafts = json.loads(response.text) if response.text else {}
+        log_outcome(
+            "platform_trend_strategist",
+            "success",
+            {
+                "tiktok_count": len(drafts.get("tiktok_captions", [])),
+                "ig_count": len(drafts.get("instagram_captions", [])),
+                "substack_count": len(drafts.get("substack_hooks", [])),
+            },
+        )
     except Exception as e:
         logger.warning("Platform strategist fallback engaged: %s", e)
         drafts = {
@@ -211,6 +252,7 @@ async def platform_strategist_node(ctx: Context, node_input: Any) -> dict[str, A
             ],
             "strategy_rationale": "Grounded in deadpan observational humor with zero generic corporate phrasing.",
         }
+        log_outcome("platform_trend_strategist", "fallback", error=str(e))
 
     ctx.state["draft_captions"] = drafts
     return drafts
@@ -222,6 +264,12 @@ async def audit_cliches_guardrail_func(
     """Core logic for auditing drafts against banned clichés and generating closed-loop routing."""
     logger.info("Executing audit_cliches_guardrail")
     retry_count = ctx.state.get("guardrail_retry_count", 0)
+
+    log_intent(
+        "humanizer_cliche_guardrail",
+        "auditing_caption_batch",
+        {"retry_count": retry_count},
+    )
 
     # Flatten all caption texts to run deterministic cliché scrubber
     all_texts: list[str] = []
@@ -243,6 +291,11 @@ async def audit_cliches_guardrail_func(
             audit_res["detected_cliches"],
             retry_count + 1,
         )
+        log_outcome(
+            "humanizer_cliche_guardrail",
+            "retry",
+            {"retry_count": retry_count + 1, "cliches": audit_res["detected_cliches"]},
+        )
         return Event(
             actions=EventActions(
                 route="retry",
@@ -256,6 +309,11 @@ async def audit_cliches_guardrail_func(
 
     # Cleaned and approved
     logger.info("Guardrail passed or max retries reached. Routing to HITL approval.")
+    log_outcome(
+        "humanizer_cliche_guardrail",
+        "approved",
+        {"passed_clean": audit_res["is_clean"], "total_retries": retry_count},
+    )
     return Event(
         actions=EventActions(
             route="approved",
@@ -281,6 +339,12 @@ async def human_approval_hook(
     """Node 4: Human-in-the-Loop (HITL) manual quality gate before publishing."""
     logger.info("Executing human_approval_hook. Resume inputs: %s", ctx.resume_inputs)
 
+    log_intent(
+        "human_in_the_loop_approval",
+        "evaluating_hitl_decision",
+        {"is_resumed": bool(ctx.resume_inputs)},
+    )
+
     # Format a preview summary for the reviewer
     preview_lines = ["\n✨ **Generated Viral Captions Preview:**"]
     for t in node_input.get("tiktok_captions", []):
@@ -297,6 +361,11 @@ async def human_approval_hook(
 
     # If first entry: yield request for user approval / feedback
     if not ctx.resume_inputs or "caption_approval" not in ctx.resume_inputs:
+        log_outcome(
+            "human_in_the_loop_approval",
+            "paused",
+            {"action": "requesting_user_approval"},
+        )
         yield Event(
             content=types.Content(
                 role="model", parts=[types.Part.from_text(text=preview_text)]
@@ -318,6 +387,7 @@ async def human_approval_hook(
     logger.info("User HITL response: %s", user_response)
 
     if user_response in ("approve", "approved", "yes", "y", "ok", "looks good", "lgtm"):
+        log_outcome("human_in_the_loop_approval", "approved", {"decision": "finalize"})
         yield Event(
             actions=EventActions(
                 route="finalize",
@@ -326,6 +396,9 @@ async def human_approval_hook(
         )
     else:
         # Route back to strategist with specific human guidance
+        log_outcome(
+            "human_in_the_loop_approval", "revision_requested", {"decision": "revise"}
+        )
         yield Event(
             actions=EventActions(
                 route="revise",
@@ -342,6 +415,7 @@ async def publish_and_finalize_node(
 ) -> AsyncGenerator[Any, None]:
     """Node 5: Formats and emits finalized captions, saving to persistent user state."""
     logger.info("Finalizing and publishing captions.")
+    log_intent("finalize_and_publish", "formatting_and_saving_captions")
 
     tiktok_list: list[str] = []
     for item in node_input.get("tiktok_captions", []):
@@ -388,6 +462,11 @@ async def publish_and_finalize_node(
         + "\n\n---\n*🛡️ Guardrails: 0 AI clichés detected • Tone: 100% human creator authentic*"
     )
 
+    log_outcome(
+        "finalize_and_publish",
+        "success",
+        {"published_count": len(tiktok_list + ig_list + substack_list)},
+    )
     yield Event(
         content=types.Content(
             role="model", parts=[types.Part.from_text(text=md_output)]

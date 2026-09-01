@@ -24,6 +24,7 @@ from google.adk.runners import Runner
 
 from app.app_utils import services
 from app.app_utils.a2a import attach_a2a_routes
+from app.observability import configure_structured_logging
 
 load_dotenv()
 allow_origins = (
@@ -35,6 +36,7 @@ AGENT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 @contextlib.asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    configure_structured_logging()
     from app.agent import app as adk_app
     from app.agent import root_agent
 
